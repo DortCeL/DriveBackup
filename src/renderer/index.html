@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DriveBackup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #171923;
+      --surface2:  #1e2330;
+      --border:    #2d3748;
+      --border2:   #3a4a63;
+      --text:      #e2e8f0;
+      --muted:     #718096;
+      --accent:    #4ade80;
+      --accent-dim:#1a3d2a;
+      --warn:      #fb923c;
+      --warn-dim:  #3d2010;
+      --error:     #f87171;
+      --error-dim: #3d1010;
+      --blue:      #60a5fa;
+      --blue-dim:  #1a2d4a;
+      --mono:      'JetBrains Mono', monospace;
+      --sans:      'Inter', sans-serif;
+    }
+
+    html, body {
+      height: 100%; background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 14px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    /* ── Layout ─────────────────────────────────────────── */
+    .app {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      grid-template-rows: 38px 1fr;
+      height: 100vh;
+    }
+
+    /* Title bar drag area */
+    .titlebar {
+      grid-column: 1 / -1;
+      -webkit-app-region: drag;
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+    }
+    .titlebar-logo {
+      display: flex; align-items: center; gap: 8px;
+      font-family: var(--mono); font-size: 12px; font-weight: 500;
+      color: var(--text); letter-spacing: 0.05em;
+    }
+    .titlebar-logo .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+    }
+    .titlebar-logo .dot.inactive { background: var(--muted); box-shadow: none; }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px 0;
+      display: flex; flex-direction: column; gap: 2px;
+      overflow-y: auto;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 16px;
+      cursor: pointer; border-radius: 0;
+      color: var(--muted); font-size: 13px; font-weight: 500;
+      transition: all 0.15s; border-left: 2px solid transparent;
+      -webkit-app-region: no-drag;
+    }
+    .nav-item:hover { color: var(--text); background: var(--surface2); }
+    .nav-item.active {
+      color: var(--text); background: var(--surface2);
+      border-left-color: var(--accent);
+    }
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+    .sidebar-spacer { flex: 1; }
+
+    /* Main content */
+    .content {
+      overflow-y: auto; padding: 28px 32px;
+      background: var(--bg);
+    }
+
+    /* ── Panels ─────────────────────────────────────────── */
+    .panel { display: none; flex-direction: column; gap: 24px; }
+    .panel.active { display: flex; }
+
+    .panel-title {
+      font-size: 18px; font-weight: 600; color: var(--text);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .panel-title .subtitle {
+      font-size: 12px; font-weight: 400; color: var(--muted);
+      font-family: var(--mono); margin-top: 2px;
+    }
+
+    /* ── Cards ──────────────────────────────────────────── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px;
+    }
+    .card-title {
+      font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 16px;
+    }
+
+    /* ── Status Card ────────────────────────────────────── */
+    .status-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 24px;
+      display: flex; align-items: center; gap: 20px;
+    }
+    .status-pulse-wrap {
+      position: relative; width: 52px; height: 52px;
+      flex-shrink: 0;
+    }
+    .status-pulse {
+      width: 52px; height: 52px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; position: relative; z-index: 1;
+    }
+    .status-pulse.connected { background: var(--accent-dim); }
+    .status-pulse.disconnected { background: var(--surface2); }
+    .status-pulse.backing-up { background: var(--blue-dim); animation: spin-pulse 1.5s infinite; }
+    @keyframes spin-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+    .status-ring {
+      position: absolute; inset: -4px; border-radius: 50%;
+      border: 2px solid var(--accent); opacity: 0;
+    }
+    .status-pulse.connected ~ .status-ring,
+    .status-pulse.backing-up ~ .status-ring {
+      opacity: 0.4; animation: ring-pulse 2s infinite;
+    }
+    @keyframes ring-pulse { 0%{transform:scale(1);opacity:0.4} 100%{transform:scale(1.4);opacity:0} }
+
+    .status-info { flex: 1; }
+    .status-label {
+      font-size: 15px; font-weight: 600; color: var(--text);
+    }
+    .status-sub {
+      font-size: 12px; color: var(--muted); margin-top: 3px;
+      font-family: var(--mono);
+    }
+    .status-actions { display: flex; gap: 8px; align-items: center; }
+
+    /* ── Stats row ──────────────────────────────────────── */
+    .stats-row {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    }
+    .stat-box {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 14px 16px;
+    }
+    .stat-value {
+      font-family: var(--mono); font-size: 20px; font-weight: 500;
+      color: var(--text);
+    }
+    .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Buttons ────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 8px 16px; border-radius: 6px; border: none;
+      font-family: var(--sans); font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--accent); color: #0a1a0f;
+    }
+    .btn-primary:hover:not(:disabled) { background: #6ee7a0; }
+    .btn-secondary {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover:not(:disabled) { background: var(--border); }
+    .btn-danger {
+      background: var(--error-dim); color: var(--error);
+      border: 1px solid #5a2020;
+    }
+    .btn-danger:hover:not(:disabled) { background: #5a2020; }
+    .btn-ghost {
+      background: transparent; color: var(--muted);
+    }
+    .btn-ghost:hover:not(:disabled) { color: var(--text); }
+    .btn-lg { padding: 11px 22px; font-size: 14px; }
+    .btn-sm { padding: 5px 11px; font-size: 12px; }
+
+    /* ── Folder list ────────────────────────────────────── */
+    .folder-list { display: flex; flex-direction: column; gap: 8px; }
+    .folder-item {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 10px 14px;
+    }
+    .folder-icon { font-size: 18px; flex-shrink: 0; }
+    .folder-path {
+      flex: 1; font-family: var(--mono); font-size: 12px;
+      color: var(--text); overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .folder-name {
+      font-size: 13px; font-weight: 500; color: var(--text);
+    }
+    .folder-sub {
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .folder-remove {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 16px; padding: 2px 4px;
+      border-radius: 4px; transition: all 0.15s;
+    }
+    .folder-remove:hover { color: var(--error); background: var(--error-dim); }
+    .empty-folders {
+      text-align: center; padding: 32px;
+      color: var(--muted); font-size: 13px;
+    }
+    .empty-folders .icon { font-size: 32px; margin-bottom: 10px; }
+
+    /* ── Form fields ────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label {
+      font-size: 12px; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.07em;
+    }
+    .field input, .field select {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 9px 12px;
+      color: var(--text); font-family: var(--mono); font-size: 13px;
+      outline: none; transition: border-color 0.15s;
+      width: 100%;
+    }
+    .field input:focus, .field select:focus {
+      border-color: var(--accent);
+    }
+    .field input::placeholder { color: var(--muted); }
+    .field select option { background: var(--surface2); }
+    .field-hint {
+      font-size: 11px; color: var(--muted); line-height: 1.5;
+    }
+
+    /* ── Schedule toggle ────────────────────────────────── */
+    .schedule-row {
+      display: flex; align-items: center; gap: 16px;
+    }
+    .toggle-group {
+      display: flex; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+    }
+    .toggle-btn {
+      padding: 8px 18px; font-size: 13px; font-weight: 500;
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .toggle-btn.active {
+      background: var(--accent-dim); color: var(--accent);
+    }
+
+    /* ── Log ────────────────────────────────────────────── */
+    .log-list { display: flex; flex-direction: column; gap: 8px; }
+    .log-entry {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 12px 16px;
+      display: grid; grid-template-columns: 1fr auto; gap: 8px;
+      align-items: start;
+    }
+    .log-entry.has-errors { border-color: #5a2020; }
+    .log-time {
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .log-badge {
+      font-size: 11px; font-weight: 600; padding: 2px 8px;
+      border-radius: 4px; font-family: var(--mono);
+    }
+    .log-badge.ok { background: var(--accent-dim); color: var(--accent); }
+    .log-badge.error { background: var(--error-dim); color: var(--error); }
+    .log-badge.scheduled { background: var(--blue-dim); color: var(--blue); }
+    .log-details {
+      font-size: 12px; color: var(--muted); margin-top: 4px;
+      grid-column: 1 / -1;
+    }
+    .log-empty {
+      text-align: center; padding: 32px;
+      color: var(--muted); font-size: 13px;
+    }
+
+    /* ── Toast ──────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; right: 24px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 18px;
+      font-size: 13px; color: var(--text);
+      transform: translateY(80px); opacity: 0;
+      transition: all 0.25s; z-index: 999;
+      max-width: 320px;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+    #toast.success { border-color: var(--accent); }
+    #toast.error-t { border-color: var(--error); }
+
+    /* ── Alert banner ───────────────────────────────────── */
+    .alert {
+      border-radius: 6px; padding: 12px 16px;
+      font-size: 13px; line-height: 1.5;
+    }
+    .alert.info { background: var(--blue-dim); border: 1px solid #2a4a7a; color: var(--blue); }
+    .alert.warn { background: var(--warn-dim); border: 1px solid #5a3010; color: var(--warn); }
+    .alert.success { background: var(--accent-dim); border: 1px solid #1a5a2a; color: var(--accent); }
+
+    /* ── Credentials setup ──────────────────────────────── */
+    .steps {
+      counter-reset: step;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .step {
+      display: flex; gap: 14px; align-items: flex-start;
+      padding: 14px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 6px;
+    }
+    .step-num {
+      counter-increment: step;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--accent-dim); color: var(--accent);
+      font-family: var(--mono); font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .step-num::after { content: counter(step); }
+    .step-content { flex: 1; font-size: 13px; color: var(--text); line-height: 1.6; }
+    .step-content a { color: var(--accent); text-decoration: none; }
+    .step-content code {
+      font-family: var(--mono); background: var(--bg);
+      padding: 1px 5px; border-radius: 3px; font-size: 12px;
+      color: var(--warn);
+    }
+
+    /* ── Progress ───────────────────────────────────────── */
+    #backup-status-bar {
+      display: none;
+      background: var(--blue-dim); border: 1px solid #2a4a7a;
+      border-radius: 6px; padding: 12px 16px;
+      font-size: 13px; color: var(--blue);
+      align-items: center; gap: 10px;
+    }
+    #backup-status-bar.visible { display: flex; }
+    .spinner {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid var(--blue-dim);
+      border-top-color: var(--blue);
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .divider { height: 1px; background: var(--border); }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Title bar -->
+  <div class="titlebar">
+    <div class="titlebar-logo">
+      <div class="dot inactive" id="conn-dot"></div>
+      DriveBackup
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="nav-item active" data-panel="dashboard">
+      <span class="nav-icon">⬡</span> Dashboard
+    </div>
+    <div class="nav-item" data-panel="folders">
+      <span class="nav-icon">📁</span> Folders
+    </div>
+    <div class="nav-item" data-panel="schedule">
+      <span class="nav-icon">⏰</span> Schedule
+    </div>
+    <div class="nav-item" data-panel="log">
+      <span class="nav-icon">📋</span> History
+    </div>
+    <div class="sidebar-spacer"></div>
+    <div class="nav-item" data-panel="settings">
+      <span class="nav-icon">⚙</span> Settings
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main class="content">
+
+    <!-- Dashboard -->
+    <div class="panel active" id="panel-dashboard">
+      <div>
+        <div class="panel-title">Dashboard</div>
+        <div class="panel-title"><span class="subtitle" id="dash-subtitle">Configure your backup below</span></div>
+      </div>
+
+      <div id="backup-status-bar">
+        <div class="spinner"></div>
+        <span id="backup-status-text">Preparing backup…</span>
+      </div>
+
+      <div class="status-card">
+        <div class="status-pulse-wrap">
+          <div class="status-pulse disconnected" id="status-pulse">☁</div>
+          <div class="status-ring"></div>
+        </div>
+        <div class="status-info">
+          <div class="status-label" id="status-label">Not connected</div>
+          <div class="status-sub" id="status-sub">Connect your Google account in Settings</div>
+        </div>
+        <div class="status-actions">
+          <button class="btn btn-primary btn-lg" id="btn-backup" disabled>▶ Back Up Now</button>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-value" id="stat-folders">0</div>
+          <div class="stat-label">Folders watched</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="stat-last">—</div>
+          <div class="stat-label">Last backup</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="stat-schedule">Manual</div>
+          <div class="stat-label">Schedule</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recent backups</div>
+        <div class="log-list" id="dash-log">
+          <div class="log-empty">No backups yet. Hit "Back Up Now" to get started.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Folders -->
+    <div class="panel" id="panel-folders">
+      <div>
+        <div class="panel-title">Folders</div>
+        <div class="panel-title"><span class="subtitle">Choose which folders to back up</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Watched folders</div>
+        <div class="folder-list" id="folder-list">
+          <div class="empty-folders">
+            <div class="icon">📂</div>
+            No folders added yet.
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button class="btn btn-secondary" id="btn-add-folder">＋ Add Folder</button>
+        </div>
+      </div>
+      <div class="alert info">
+        Each folder will be compressed as a <code>.zip</code> file and uploaded to a <code>DriveBackup/</code> folder in your Google Drive, organized by folder name.
+      </div>
+    </div>
+
+    <!-- Schedule -->
+    <div class="panel" id="panel-schedule">
+      <div>
+        <div class="panel-title">Schedule</div>
+        <div class="panel-title"><span class="subtitle">Run backups automatically</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Backup frequency</div>
+        <div class="schedule-row">
+          <div class="toggle-group">
+            <button class="toggle-btn active" data-val="manual" id="sched-manual">Manual only</button>
+            <button class="toggle-btn" data-val="daily" id="sched-daily">Daily</button>
+          </div>
+        </div>
+        <div style="margin-top: 16px; display:none;" id="time-picker">
+          <div class="field" style="max-width:200px;">
+            <label>Run at (24h)</label>
+            <input type="time" id="schedule-time" value="02:00">
+            <div class="field-hint">The app must be running at this time for the scheduled backup to trigger.</div>
+          </div>
+        </div>
+        <div style="margin-top: 16px;">
+          <button class="btn btn-primary" id="btn-save-schedule">Save schedule</button>
+        </div>
+      </div>
+      <div class="alert warn">
+        Automatic backups only run while the app is open. For true background scheduling, consider setting up a Windows Task Scheduler entry to launch DriveBackup at startup.
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="panel" id="panel-log">
+      <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div>
+          <div class="panel-title">Backup History</div>
+          <div class="panel-title"><span class="subtitle">Last 50 backup runs</span></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="btn-clear-log">Clear history</button>
+      </div>
+      <div class="log-list" id="full-log">
+        <div class="log-empty">No backup history yet.</div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="panel" id="panel-settings">
+      <div>
+        <div class="panel-title">Settings</div>
+        <div class="panel-title"><span class="subtitle">Google OAuth credentials & account</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Google account</div>
+        <div id="account-section">
+          <div class="alert info" style="margin-bottom:16px;" id="account-status-msg">
+            Not connected. Add your credentials below and sign in.
+          </div>
+          <div style="display:flex; gap:8px;" id="account-actions">
+            <button class="btn btn-primary" id="btn-connect">Connect Google Account</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">OAuth credentials</div>
+        <div class="alert info" style="margin-bottom: 16px;">
+          DriveBackup uses your own Google Cloud project so your data goes directly to your Drive. These credentials are stored locally on your machine only.
+        </div>
+
+        <div class="steps" style="margin-bottom: 20px;">
+          <div class="step"><div class="step-num"></div><div class="step-content">Go to <a href="#" id="link-console">console.cloud.google.com</a> → Create a new project (e.g. <code>DriveBackup</code>).</div></div>
+          <div class="step"><div class="step-num"></div><div class="step-content">Enable the <strong>Google Drive API</strong> for your project under "APIs & Services → Library".</div></div>
+          <div class="step"><div class="step-num"></div><div class="step-content">Go to <strong>APIs & Services → OAuth consent screen</strong>. Set app type to <code>External</code>, fill in an app name, and add your Gmail as a test user.</div></div>
+          <div class="step"><div class="step-num"></div><div class="step-content">Go to <strong>Credentials → Create Credentials → OAuth client ID</strong>. Choose <code>Desktop app</code>. Copy the Client ID and Secret below.</div></div>
+          <div class="step"><div class="step-num"></div><div class="step-content">Add <code>http://localhost:42813/oauth2callback</code> to the <strong>Authorized redirect URIs</strong>.</div></div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:14px; max-width: 480px;">
+          <div class="field">
+            <label>Client ID</label>
+            <input type="text" id="input-client-id" placeholder="xxxxxxxxxx.apps.googleusercontent.com">
+          </div>
+          <div class="field">
+            <label>Client Secret</label>
+            <input type="password" id="input-client-secret" placeholder="GOCSPX-…">
+          </div>
+          <div>
+            <button class="btn btn-primary" id="btn-save-creds">Save credentials</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="danger-zone">
+        <div class="card-title">Danger zone</div>
+        <button class="btn btn-danger" id="btn-disconnect">Disconnect Google Account</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script src="renderer.js"></script>
+</body>
+</html>

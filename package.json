@@ -1,0 +1,34 @@
+{
+  "name": "drivebackup",
+  "version": "1.0.0",
+  "description": "Backup folders to Google Drive automatically",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "electron-store": "^8.2.0",
+    "archiver": "^7.0.1"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.drivebackup.app",
+    "productName": "DriveBackup",
+    "win": {
+      "target": "nsis",
+      "icon": "src/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
